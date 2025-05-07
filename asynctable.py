@@ -62,7 +62,7 @@ async def extract_table_data():
         return [], [], [], "", "", ""
 
     nicknames = [member['playerName'] for member in members]
-    current_bounties = [int(member['bounty']) for member in members]
+    current_bounties = [int(member['invest']//1000000) for member in members]
 
     base_filename = "baseline.json"
 
@@ -87,12 +87,16 @@ async def extract_table_data():
 
     return nicknames, previous_bounties, current_bounties, diffs, first_updated_at, last_updated_at
 
-async def create_table(file_name) -> None:
+async def create_table(
+    file_name: str,
+    sort_by: str = "Разница",  # Название столбца для сортировки
+    ascending: bool = True       # Порядок сортировки
+) -> None:
     nicknames, previous, current, diffs, first_updated_at, last_updated_at = await extract_table_data()
     if not nicknames:
         return None
 
-    # Создаем DataFrame
+    # Создаем DataFrame с динамическими заголовками
     df = pd.DataFrame({
         'Никнеймы': nicknames,
         f'Старое ({first_updated_at})': previous,
@@ -100,38 +104,51 @@ async def create_table(file_name) -> None:
         'Разница': diffs
     })
 
-    # Создаем изображение с помощью matplotlib
-    fig, ax = plt.subplots(figsize=(10, len(df) * 0.2))  # Размер таблицы зависит от количества строк
+    # Проверяем, что сортируемый столбец есть в таблице
+    if sort_by not in df.columns:
+        sort_by = 'Никнеймы'  # По умолчанию сортируем по никнеймам
+
+    # Сортируем DataFrame по выбранному столбцу
+    df = df.sort_values(by=sort_by, ascending=ascending).reset_index(drop=True)
+
+    # Создаем изображение таблицы
+    fig, ax = plt.subplots(figsize=(10, max(2, len(df) * 0.2)))  # высота зависит от количества строк
     ax.axis('tight')
     ax.axis('off')
 
-    # Отображаем таблицу с улучшенным стилем
-    table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center', colColours=["#6fa3ef"]*len(df.columns), cellColours=[['#e8f1ff']*len(df.columns)]*len(df)) 
+    # Создаем таблицу в matplotlib с отсортированными данными
+    table = ax.table(
+        cellText=df.values,
+        colLabels=df.columns,
+        loc='center',
+        cellLoc='center',
+        colColours=["#6fa3ef"] * len(df.columns),
+        cellColours=[['#e8f1ff'] * len(df.columns)] * len(df)
+    )
 
-    # Настройка шрифта и цвета для таблицы
+    # Настройка стилей ячеек (заголовки, выделение diff)
     for (i, j), cell in table.get_celld().items():
         if i == 0:
             cell.set_fontsize(14)
-            cell.set_text_props(weight='bold', color='white')  # Белый текст для заголовков
-            cell.set_facecolor('#4c75c6')  # Синий цвет для заголовков
+            cell.set_text_props(weight='bold', color='white')
+            cell.set_facecolor('#4c75c6')
         else:
             cell.set_fontsize(12)
-            cell.set_text_props(weight='normal', color='black')  # Черный текст для данных
-            if j == 3:  # Для колонки "Разница" используем выделение положительных/отрицательных значений
-                if df.iloc[i-1, j] > 0:
-                    cell.set_facecolor('#d9ffcc')  # Зеленый для положительных
-                elif df.iloc[i-1, j] < 0:
-                    cell.set_facecolor('#ffcccc')  # Красный для отрицательных
+            cell.set_text_props(weight='normal', color='black')
+            if df.columns[j] == 'Разница':
+                val = df.iloc[i - 1, j]
+                if val > 0:
+                    cell.set_facecolor('#d9ffcc')  # Зеленый
+                elif val < 0:
+                    cell.set_facecolor('#ffcccc')  # Красный
                 else:
-                    cell.set_facecolor('#ffffff')  # Белый для 0
+                    cell.set_facecolor('#ffffff')  # Белый
             else:
-                cell.set_facecolor('#ffffff')  # Белый для других данных
+                cell.set_facecolor('#ffffff')
 
-    # Убираем лишние поля
     plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
-
-    # Сохраняем изображение без белых полей
     plt.savefig(f"images/{file_name}.png", bbox_inches="tight", dpi=300, pad_inches=0.1)
+    plt.close(fig)  # Закрываем фигуру, чтобы не накапливать память
     print(f"Таблица успешно создана и сохранена в images/{file_name}.png")
 
 async def main_table(file_name):
