@@ -2,29 +2,40 @@ import asyncio
 import logging
 import sys
 
+
+from typing import Union
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, Command, BaseFilter
 from aiogram.types import Message, FSInputFile, CallbackQuery
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
 from datetime import datetime
-from typing import List, Union
+from Scripts.config_reader import config
 
-from asynctable import get_header, main_table
-from database import update_guild_id, update_token, create_db, insert_initial_data
-from keyboards import get_inline_keyboard
-
-TOKEN = "7037297011:AAF0j67AXCDyK1To_9ngN3h60G7B8TY6-4U"
+from Scripts.asynctable import get_header, main_table
+from Scripts.database import update_guild_id, update_token, create_db, insert_initial_data
+from Scripts.keyboards import get_inline_keyboard
 
 
-ADMIN_IDS: List[str] = [1223634387]
+
+
+
+bot = Bot(token=config.bot_token.get_secret_value(),
+            default=DefaultBotProperties(
+            parse_mode=ParseMode.HTML,
+            )
+        )
+
+
+admin_ids = config.admin_ids
 
 dp = Dispatcher()
 
 class AdminFilter(BaseFilter):
     async def __call__(self, update: Union[Message, CallbackQuery]) -> bool:
-        return update.from_user.id in ADMIN_IDS
+        return update.from_user.id in admin_ids
 
 admin_filter = AdminFilter()
 
@@ -41,14 +52,39 @@ async def command_start_handler(message: Message) -> None:
 
 @dp.callback_query(F.data == "table")
 async def table_handler(callback: CallbackQuery) -> None:
-    file_name = f"{datetime.now().date()}"
-    await callback.message.answer("Ваша таблица генерируется, подождите немного...")
-    await main_table(file_name)
-    await asyncio.sleep(3)
-    
-    photo = FSInputFile(f"images/{file_name}.png")
-    await callback.message.answer_photo(photo=photo, caption="Ваша таблица готова")
-    await callback.answer()
+    try:
+        file_name = f"{datetime.now().date()}"
+        file_path = f"images/{file_name}.png"
+        
+        await callback.message.answer("Ваша таблица генерируется...")
+        
+        # Генерация таблицы
+        await main_table(file_name)
+        await asyncio.sleep(3)
+
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                photo = FSInputFile(file_path)
+                await callback.message.answer_photo(
+                    photo=photo,
+                    caption="Ваша таблица готова",
+                    parse_mode=ParseMode.HTML
+                )
+                break
+            except (TelegramNetworkError) as e:
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(2 * (attempt + 1))
+                
+        await callback.answer()
+        
+    except Exception as e:
+        error_message = f"❌ Ошибка при генерации таблицы: {str(e)}"
+        logging.exception(error_message)
+        await callback.message.answer(error_message)
+        await callback.answer("Произошла ошибка", show_alert=True)
     
 @dp.message(Command("update_token"), admin_filter)
 async def update_token_handler(message: Message) -> None:
@@ -88,7 +124,7 @@ async def cmd_addadmin(message: Message):
         return await message.reply("Использование: /addadmin <user_id>")
     
     new_admin_id = int(parts[1])
-    ADMIN_IDS.append(new_admin_id)
+    admin_ids.append(new_admin_id)
     await message.answer(f"{new_admin_id} теперь администратор ему открыты следующие уровни доступа:\n "
                              "Смена guild_id: https://union-titans.fr/en/guilds/ [оно находится здесь]\n "
                              "Команда /update_guild_id [новый guild_id]\n"
@@ -97,7 +133,7 @@ async def cmd_addadmin(message: Message):
     
 @dp.message(Command("adminlist"), admin_filter)
 async def admin_list_getter(message: Message):
-    await message.answer(f"Список: {', '.join(list(map(str, ADMIN_IDS)))}")
+    await message.answer(f"Список: {', '.join(list(map(str, admin_ids)))}")
         
 
 @dp.callback_query(F.data == "sheduler", admin_filter)
@@ -164,7 +200,6 @@ async def error_message(message: Message):
     await message.answer("Я вас не понял, возможно вы допустили ошибку")
 
 async def main() -> None:
-    bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     try:
         await dp.start_polling(bot)
     finally:

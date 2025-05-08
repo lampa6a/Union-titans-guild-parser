@@ -6,7 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-from database import get_guild_id, get_token
+from Scripts.database import get_guild_id, get_token
 
 async def create_session():
     guild_id = await get_guild_id()
@@ -27,6 +27,10 @@ async def get_statistic():
         token, guild_id = await create_session()
         url = f"https://union-titans.fr/api/guild/current/{guild_id}/json"
         headers = {"Authorization": f"Bearer {token}"}
+        refresh_url = f"https://union-titans.fr/api/guild/refreshData/{guild_id}"
+        async with session.post(url=refresh_url, headers=headers) as response:
+            if response.status == 200:
+                print('Данные обновлены')
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 try:
@@ -51,7 +55,7 @@ async def get_last_updated():
 async def save_last_updated(date_str):
     async with aiofiles.open('last_updated.txt', 'w', encoding='utf-8') as f:
         await f.write(date_str)  # Сохраняем текущую дату в файл
-        
+
 async def extract_table_data():
     data = await get_statistic()
     if data is None:
@@ -62,7 +66,7 @@ async def extract_table_data():
         return [], [], [], "", "", ""
 
     nicknames = [member['playerName'] for member in members]
-    current_bounties = [int(member['invest']//1000000) for member in members]
+    current_bounties = [int(member['invest']//1000000000) for member in members]
 
     base_filename = "baseline.json"
 

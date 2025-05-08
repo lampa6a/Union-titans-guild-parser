@@ -1,6 +1,9 @@
 import aiosqlite
+from config_reader import guild_config
 
 DB_PATH = 'tokens.db'
+
+guild_id, token = guild_config
 
 async def create_db():
     async with aiosqlite.connect(DB_PATH) as db:
@@ -20,7 +23,7 @@ async def insert_initial_data():
                 await db.execute('''
                     INSERT INTO tokens (token, guild_id)
                     VALUES (?, ?)
-                ''', ("c46b9c2c-2904-11f0-9120-020112c3dc7f", "5ec6ce5110ef43123880ef24"))
+                ''', (token, guild_id))
                 await db.commit()
 
 async def update_token(new_token: str):
